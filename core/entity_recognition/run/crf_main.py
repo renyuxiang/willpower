@@ -6,7 +6,7 @@ from util.utils import save_model, load_model
 from util.evaluating import Metrics
 
 def crf():
-    file_name = "./ryx_ckpts/crf.pkl"
+    file_name = "../ckpts/crf.pkl"
     train_word_lists, train_tag_lists, word2id, tag2id = \
         build_corpus("train", data_dir='../data')
     dev_word_lists, dev_tag_lists = build_corpus("dev", make_vocab=False, data_dir='../data')
