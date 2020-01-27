@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from data import build_corpus
-from ..model.hmm import HMM
+from core.entity_recognition.model.hmm import HMM
 from util.utils import save_model, load_model
 from util.evaluating import Metrics
 
@@ -31,11 +31,11 @@ def hmm():
     称P(kn|on)为发射概率， P(on|o[n-1])为转移概率, 用维特比算法解决
     """
     remove_O = False
-    file_name = "./ryx_ckpts/hmm.pkl"
+    file_name = "../ckpts/hmm.pkl"
     train_word_lists, train_tag_lists, word2id, tag2id = \
         build_corpus("train", data_dir='../data')
-    dev_word_lists, dev_tag_lists = build_corpus("dev", make_vocab=False)
-    test_word_lists, test_tag_lists = build_corpus("test", make_vocab=False)
+    dev_word_lists, dev_tag_lists = build_corpus("dev", make_vocab=False, data_dir='../data')
+    test_word_lists, test_tag_lists = build_corpus("test", make_vocab=False, data_dir='../data')
 
     print("正在训练评估HMM模型...")
     hmm_model = HMM(len(tag2id), len(word2id))
@@ -53,3 +53,6 @@ def hmm():
     print('eval test data')
     hmm_eval(eval_model, word2id, tag2id, test_word_lists, test_tag_lists)
     print('ok')
+
+if __name__ == '__main__':
+    hmm()
