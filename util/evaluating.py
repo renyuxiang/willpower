@@ -124,9 +124,9 @@ class Metrics(object):
         weighted_average['f1_score'] = 0.
         for tag in self.tagset:
             size = self.golden_tags_counter[tag]
-            weighted_average['precision'] += self.precision_scores[tag] * size
-            weighted_average['recall'] += self.recall_scores[tag] * size
-            weighted_average['f1_score'] += self.f1_scores[tag] * size
+            weighted_average['precision'] += self.precision_scores.get(tag, 0) * size
+            weighted_average['recall'] += self.recall_scores.get(tag, 0) * size
+            weighted_average['f1_score'] += self.f1_scores.get(tag, 0) * size
 
         for metric in weighted_average.keys():
             weighted_average[metric] /= total

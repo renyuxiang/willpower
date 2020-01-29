@@ -18,10 +18,10 @@ def crf():
     save_model(crf_model, file_name)
     eval_model = load_model(file_name)
     # 评估模型
+    print('eval dev data')
+    crf_eval(eval_model, dev_word_lists, dev_tag_lists)
     print('eval test data')
     crf_eval(eval_model, test_word_lists, test_tag_lists)
-    # print('eval dev data')
-    # crf_eval(eval_model, dev_word_lists, dev_tag_lists)
     print('ok')
 
 
