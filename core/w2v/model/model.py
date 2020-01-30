@@ -56,7 +56,7 @@ class SkipGramModel(nn.Module):
             pos_v: list of neibor word ids for positive word pairs.
             neg_u: list of center word ids for negative word pairs.
             neg_v: list of neibor word ids for negative word pairs.
-
+        https://zhuanlan.zhihu.com/p/65831089
         Returns:
             Loss of this process, a pytorch variable.
         """

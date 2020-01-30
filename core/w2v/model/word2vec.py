@@ -1,15 +1,14 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-from .input_data import InputData
+from core.w2v.model.input_data import InputData
 import numpy
-from .model import SkipGramModel
+from core.w2v.model.model import SkipGramModel
 from torch.autograd import Variable
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from tqdm import tqdm
 import sys
-
 
 class Word2Vec:
     def __init__(self,
@@ -84,7 +83,7 @@ class Word2Vec:
             self.optimizer.step()
 
             process_bar.set_description("Loss: %0.8f, lr: %0.6f" %
-                                        (loss.data[0],
+                                        (loss.item(),
                                          self.optimizer.param_groups[0]['lr']))
             if i * self.batch_size % 100000 == 0:
                 lr = self.initial_lr * (1.0 - 1.0 * i / batch_count)
@@ -97,5 +96,5 @@ class Word2Vec:
 if __name__ == '__main__':
     input_file_name = '../data/zhihu.txt'
     output_file_name = '../data/out_zhihu.txt'
-    w2v = Word2Vec(input_file_name=sys.argv[1], output_file_name=output_file_name)
+    w2v = Word2Vec(input_file_name=input_file_name, output_file_name=output_file_name)
     w2v.train()
