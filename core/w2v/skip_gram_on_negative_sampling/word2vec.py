@@ -3,6 +3,7 @@ from core.w2v.skip_gram_on_negative_sampling.input_data import InputData
 import torch.optim as optim
 from tqdm import tqdm
 
+
 # hyper parameters
 WINDOW_SIZE = 5  # 上下文窗口c
 BATCH_SIZE = 64  # mini-batch

@@ -1,0 +1,1 @@
+用skip_gram_on_negative_sampling里的我认得word2vec.py训练
