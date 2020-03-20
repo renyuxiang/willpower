@@ -42,5 +42,5 @@ def lstm(crf_mode=False):
 
 
 if __name__ == '__main__':
-    # lstm()
-    lstm(crf_mode=True)
+    lstm()
+    # lstm(crf_mode=True)
