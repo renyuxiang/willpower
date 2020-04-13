@@ -6,6 +6,15 @@ import os
 import csv
 import openpyxl
 import power_config
+from sklearn.metrics import recall_score, f1_score, accuracy_score, roc_auc_score, classification_report
+
+def metric(y_pred, y_true, score):
+    acc = accuracy_score(y_true, y_pred)  # 分类准确率
+    recall = recall_score(y_true, y_pred)    # 分类召回率
+    f1 = f1_score(y_true, y_pred)
+    auc = roc_auc_score(y_true, score)
+
+
 
 class Data2Vector(object):
 

@@ -13,7 +13,7 @@ class SiameseLstm(nn.Module):
         super(SiameseLstm, self).__init__()
         self.device = device
         self.embedding_layer = nn.Embedding(maxwords, embed_dim)
-        self.lstm = nn.LSTM(embed_dim, hidden_dim, num_layers=2, bidirectional=True, batch_first=True)
+        self.lstm = nn.LSTM(embed_dim, hidden_dim, num_layers=2, bidirectional=True, dropout=0.2, batch_first=True)
 
 
     def forward_once(self, q, q_len):
@@ -21,7 +21,11 @@ class SiameseLstm(nn.Module):
         _q = torch.index_select(q, dim=0, index=sorted_indices)
         q_len = torch.index_select(q_len, dim=0, index=sorted_indices)
         embedding = self.embedding_layer(_q)
-        packed = pack_padded_sequence(embedding, q_len, batch_first=True)
+        try:
+            packed = pack_padded_sequence(embedding, q_len, batch_first=True)
+        except Exception as err:
+            print(q_len)
+            raise err
         out, (_, _) = self.lstm(packed)
         unpacked, _ = pad_packed_sequence(out, batch_first=True)
         result = torch.zeros(unpacked.size())
