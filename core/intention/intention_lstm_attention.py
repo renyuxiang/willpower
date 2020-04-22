@@ -7,6 +7,7 @@
 """
 import numpy as np
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
+import json
 import random
 import xlrd, openpyxl
 import torch
@@ -16,9 +17,35 @@ import torch.nn as nn
 import time
 from tqdm import tqdm
 from torch.nn import functional as F
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+from tensorboardX import SummaryWriter
 
-random.seed(100)
+seed = 42
+random.seed(seed)
+np.random.seed(seed)
+torch.manual_seed(seed)
+
+if torch.cuda.is_available():
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = False
+    torch.backends.cudnn.enabled = True
+
 print(torch.version.cuda)
+max_len = 100
+
+data_dir = '/home/renyx/work_check/model_data/intention/'
+# data_dir = 'E:\\me\\data\\intention\\'
+lr = 1e-2
+# lr = 0.01
+epochs = 30
+w_path = 'history/3/'
+every_iterator_print = 2
+all_data_count = None
+t_name = 'intention_lstm_attention'
+tensorboard_dir = './logs/log5/'
+train_writer = SummaryWriter(tensorboard_dir)
+# val_writer = SummaryWriter(tensorboard_dir + 'val')
 
 all_intent_dict = {
     '号源是否更新': ('haoyuanRefresh', 0),
@@ -91,39 +118,90 @@ def w2excle(data, sheet_name, col=None, file_name=None, head=None, wb=None):
     if file_name:
         wb.save(file_name)
 
-# data_dir = '/home/renyx/work_check/model_data/intention/'
-data_dir = 'E:\\me\\data\\intention\\'
-lr = 1e-5
-epochs = 20
-w_path = 'history/3/'
-every_iterator_print = 1
-all_data_count = None
-
 class IntentionLstm(nn.Module):
 
-    def __init__(self, vocab_size, emb_size, hidden_size, out_size=17):
+    def __init__(self, vocab_size, emb_size, hidden_size, out_size=17, attention=None):
         super(IntentionLstm, self).__init__()
         self.embedding = nn.Embedding(vocab_size, emb_size, padding_idx=0)
         self.bilstm = nn.LSTM(emb_size, hidden_size,
                               batch_first=True,
                               bidirectional=True,
                               num_layers=2, dropout=0.1)
+        self.hidden_size = hidden_size
         self.lin = nn.Linear(2 * hidden_size, out_size)
+        self.w_omega = torch.Tensor((2*self.hidden_size, max_len))
+        self.u_omega = torch.Tensor(torch.zeros(max_len))
         self.criterion = nn.CrossEntropyLoss()
+        self.attention = attention
+        if attention == 'dot':
+            pass
+        elif attention == 'self':
+            pass
+        elif attention == 'com':
+            # self.weight_W =  (torch.Tensor(hidden_size*2, hidden_size*2))
+            # self.weight_proj = nn.Parameter(torch.Tensor(hidden_size*2, 1))
+            self.weight_W = nn.Linear(hidden_size*2, hidden_size*2)
+            self.weight_proj = nn.Linear(hidden_size*2, 1)
+
+    def attention_net(self, lstm_output, final_state):
+        if self.attention == 'dot':
+            self.dot_attention()
+        elif self.attention == 'self':
+            pass
+        return None
+
+    def com(self, lstm_output):
+
+        output_reshape = torch.Tensor.reshape(lstm_output, [-1, self.hidden_size * 2])
+        attn_tanh = torch.tanh(torch.mm(output_reshape, self.w_omega))
+        return 1
+
+    def dot_attention(self, lstm_output, final_state):
+        lstm_output = lstm_output.permute(1, 0, 2)
+        merged_state = torch.cat([s for s in final_state], 1)
+        merged_state = merged_state.squeeze(0).unsqueeze(2)
+        weights = torch.bmm(lstm_output, merged_state)
+        weights = F.softmax(weights.squeeze(2)).unsqueeze(2)
+        return torch.bmm(torch.transpose(lstm_output, 1, 2), weights).squeeze(2)
+
+    def self_attention(self):
+        pass
 
 
     def forward(self, input_ids, lengths, labels=None):
         emb = self.embedding(input_ids)  # [B, L, emb_size]
-        packed = pack_padded_sequence(emb, lengths, batch_first=True)
-        rnn_out, _ = self.bilstm(packed)
-        unpacked, _ = pad_packed_sequence(rnn_out, batch_first=True)
-        # lstm分类
-        unpacked_t = F.relu(unpacked[:,-1,:])
+        # packed = pack_padded_sequence(emb, lengths, batch_first=True)
+        rnn_out, (hidden, cell) = self.bilstm(emb)
+        att_score = None
+        # unpacked, _v2 = pad_packed_sequence(rnn_out, batch_first=True)
+        if self.attention is None:
+            # lstm分类,取最后一个有效输出作为最终输出（0为无效输出）
+            # last_output = unpacked[torch.LongTensor(range(input_ids.shape[0])), lengths - 1]
+            # unpacked_t = F.relu(last_output)
+            unpacked_t = rnn_out[:, -1, :]
+        elif self.attention == 'dot':
+            # hidden = hidden.
+            unpacked_t = self.dot_attention(rnn_out, hidden)
+        elif self.attention == 'com':
+            u = torch.tanh(self.weight_W(rnn_out))
+            att = torch.squeeze(self.weight_proj(u), 2)
+            att_score = F.softmax(att, dim=1)
+            scored_x = rnn_out * (att_score.unsqueeze(-1))
+            unpacked_t = torch.sum(scored_x, dim=1)
+
+            # u = torch.tanh(torch.matmul(rnn_out, self.weight_W))
+            # att = torch.squeeze(torch.matmul(u, self.weight_proj), 2)
+            # att_score = F.softmax(att, dim=1)
+            # scored_x = rnn_out * att_score
+            # unpacked_t = torch.sum(scored_x, dim=1)
+
         scores = self.lin(unpacked_t)  # [B, L, out_size]
-        logits = F.softmax(scores, dim=1)
-        outputs = (logits,)
+        # logits = F.softmax(scores, dim=1)
+        outputs = (scores,)
+        if self.attention:
+            outputs += (att_score,)
         if labels is not None:
-            loss = self.criterion(logits, labels)
+            loss = self.criterion(scores, labels)
             outputs = (loss,) + outputs
         return outputs
 
@@ -139,8 +217,16 @@ def custom_collate(batch):
     q1_list = [q1_list[i] for i in indices]
     labels = [labels[i] for i in indices]
     q1_len = [len(q) for q in q1_list]
-    q1_max_len = q1_len[0]
-    [temp.extend([0] * (q1_max_len - len(temp)) ) for temp in q1_list]
+    # q1_max_len = q1_len[0]
+    for index, temp in enumerate(q1_list):
+        if len(temp) >= max_len:
+            q1_list[index] = temp[:max_len]
+            continue
+        real_temp = [0] * (max_len - len(temp))
+        real_temp.extend(temp)
+        q1_list[index] = real_temp
+        # q1_list[index] = ([0] * (q1_max_len - len(temp))).extend(temp)
+    # [temp.extend([0] * (q1_max_len - len(temp)) ) for temp in q1_list]
     # return torch.Tensor(q1_list), torch.Tensor(q1_len) , torch.Tensor(labels)
     return q1_list, q1_len, labels
 
@@ -152,8 +238,11 @@ class Trainer(object):
             self.device_id = list(range(len(os.environ['CUDA_VISIBLE_DEVICES'].split(','))))
         print('device:', self.device)
         self.paraller = False
+        if self.device_id == 'cuda' and len(self.device_id) >= 2:
+            self.paraller = True
+        print('paraller:', self.paraller)
         print('start load source_model....')
-        self.source_model = IntentionLstm(vocab_size=6000, emb_size=128, hidden_size=256)
+        self.source_model = IntentionLstm(vocab_size=6000, emb_size=128, hidden_size=128, attention='com')
         print(self.source_model)
         if self.paraller:
             print('start load model....')
@@ -162,10 +251,11 @@ class Trainer(object):
         else:
             self.model = self.source_model.to(self.device)
         self.criterion = nn.CrossEntropyLoss()
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr, weight_decay = 0.001)
+        self.scheduler = ReduceLROnPlateau(self.optimizer, 'min', patience=4, verbose=True)
         self.min_loss = None
-        self.model_best_name = w_path + 'intention_lstm_best.pkl'
-        self.model_name = w_path + 'intention_lstm.pkl'
+        self.model_best_name = w_path + 'intention_lstm_attention_best.pkl'
+        self.model_name = w_path + 'intention_lstm_attention.pkl'
 
         # no_decay = ['bias', 'LayerNorm.weight']
         # optimizer_grouped_parameters = [
@@ -192,10 +282,17 @@ class Trainer(object):
                 self.save(self.model_best_name)
                 print('epoch:%s 保存新参数, val loss from %s to %s' % (epoch, self.min_loss, val_loss))
                 self.min_loss = val_loss
+            self.scheduler.step(val_loss)
+            train_writer.add_scalar('zhi/train_acc', train_result['acc'], epoch)
+            train_writer.add_scalar('zhi/val_acc', val_result['acc'], epoch)
+            train_writer.add_scalar('zhi/train_loss', train_result['loss'], epoch)
+            train_writer.add_scalar('zhi/val_loss', val_result['loss'], epoch)
+            # val_writer.add_scalar('acc', val_result['acc'], epoch)
+            # val_writer.add_scalar('loss', val_result['loss'], epoch)
 
         self.save(self.model_name)
         print('start t...')
-        self.t(model=self.model, echo='intention_end')
+        self.t(model=self.model, echo='intention_attention_end')
         print('train ok')
 
     def save(self, model_name):
@@ -209,7 +306,7 @@ class Trainer(object):
         device = self.device
         model = self.model
         optimizer = self.optimizer
-        criterion = self.criterion
+        # criterion = self.criterion
         model.train()
         total_step = len(train_loader)
         total = 0
@@ -302,7 +399,9 @@ class Trainer(object):
     def t(self, model=None, name=None, **kwargs):
         check_model = model
         if name:
-            check_model = torch.load(w_path+name)
+        #     if self.device == 'cpu':
+        #         check_model = torch.load(w_path+name, map_location='cpu')
+            check_model = torch.load(w_path+name, map_location=self.device)
         check_model.eval()
         device = self.device
         total = 0
@@ -311,8 +410,8 @@ class Trainer(object):
         data_set = IntentionDataset(name=data_dir + 'intention.xls', sheet_index=2, shuffle=False)
         for i in list(range(len(data_set))):
             data_temp = data_set.__getitem__(i)
-            inputs = {'input_ids': torch.LongTensor([data_temp[0]]),
-                      'lengths': torch.LongTensor([len(data_temp[0])]),
+            inputs = {'input_ids': torch.LongTensor([data_temp[0]]).to(device),
+                      'lengths': torch.LongTensor([len(data_temp[0])]).to(device),
                       }
             raw_x = data_set.data[i][0]
             outputs = check_model(**inputs)
@@ -321,17 +420,18 @@ class Trainer(object):
             pred_score = pred_score.item()
             preds = preds.item()
             out_label_ids = data_temp[1]
+            atte_score = json.dumps(outputs[1].squeeze(0).tolist(), ensure_ascii=False)
 
             equal = 0   # 0 - 不相等
             if preds == out_label_ids:
                 equal += 1
                 correct += 1
             total += 1
-            result.append([raw_x, num_label_intent_dict[out_label_ids], out_label_ids, preds, equal, pred_score])
+            result.append([raw_x, num_label_intent_dict[out_label_ids], out_label_ids, preds, equal, pred_score, atte_score])
         acc = 100 * correct / total
         print('acc : {} / {} = {} %'.format(correct, total, acc))
-        head = ['问句', 'y_cn', 'y', 'y_hat', 'equal', 'score']
-        w2excle(result, sheet_name='test_result', col=6, file_name=w_path + kwargs['echo'] + '.xlsx', head=head)
+        head = ['问句', 'y_cn', 'y', 'y_hat', 'equal', 'score', 'attention']
+        w2excle(result, sheet_name='test_result', col=7, file_name=w_path + kwargs['echo'] + '.xlsx', head=head)
         print(kwargs['echo'])
 
 class Dictionary(object):
@@ -393,14 +493,6 @@ class IntentionDataset(Dataset):
         temp = self.data[index]
         input_ids = self.dic.get_vector(temp[0])
         label = temp[2]
-        # inputs = tokenizer.encode_plus(temp[0][:max_len - 1], add_special_tokens=True, max_length=max_len)
-        # input_ids, token_type_ids = inputs["input_ids"], inputs["token_type_ids"]
-        # attention_mask = [1 if mask_padding_with_zero else 0] * len(input_ids)
-        # padding_length = max_len - len(input_ids)
-        # input_ids = input_ids + ([pad_token] * padding_length)
-        # attention_mask = attention_mask + ([0 if mask_padding_with_zero else 1] * padding_length)
-        # token_type_ids = token_type_ids + ([pad_token_segment_id] * padding_length)
-        # return input_ids, attention_mask, token_type_ids, temp[1]
         return input_ids, label
 
     def __len__(self):
@@ -412,19 +504,19 @@ def train_model():
     # weights = [4 if int(label) == 1 else 1 for _, _, label in train_dataset.data]
     # sampler = WeightedRandomSampler(weights, num_samples=8000, replacement=True)
     # sampler = WeightedRandomSampler(weights, num_samples=len(train_dataset.data), replacement=True)
-    train_loader = DataLoader(train_dataset, batch_size=128, num_workers=0, shuffle=True, collate_fn=custom_collate)
+    train_loader = DataLoader(train_dataset, batch_size=1024, num_workers=0, shuffle=True, collate_fn=custom_collate)
     val_loader = DataLoader(val_dataset, batch_size=8, collate_fn=custom_collate)
     print('init trainer....')
     trainer = Trainer()
     print('start train ....')
     trainer.train(train_loader, val_loader)
-    trainer.t(name='intention.pkl', echo='intention_last')
+    trainer.t(name='%s.pkl' % t_name, echo='%s_last' % t_name)
 
 
 def check_model():
     trainer = Trainer()
     # trainer.t(name='intention.pkl', echo='intention_last')
-    trainer.t(name='intention_lstm.pkl', echo='intention_lstm')
+    trainer.t(name='%s.pkl' % t_name, echo=t_name)
 
 
 if __name__ == '__main__':

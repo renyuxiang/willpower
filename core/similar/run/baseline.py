@@ -80,7 +80,7 @@ def custom_collate(batch):
 class Trainer(object):
     def __init__(self):
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self.paraller = True
+        self.paraller = False
         if self.paraller:
             self.model = nn.DataParallel(SiameseLstm(embed_size, hidden_size, self.device)).to(self.device)
         else:
@@ -241,15 +241,15 @@ def train_model():
     weights = [4 if int(label) == 1 else 1 for _, _, label in train_dataset.data]
     # sampler = WeightedRandomSampler(weights, num_samples=8000, replacement=True)
     sampler = WeightedRandomSampler(weights, num_samples=len(train_dataset.data), replacement=True)
-    train_loader = DataLoader(train_dataset, batch_size=64, num_workers=10, sampler=sampler, collate_fn=custom_collate)
-    val_loader = DataLoader(val_dataset, batch_size=64, collate_fn=custom_collate)
+    train_loader = DataLoader(train_dataset, batch_size=4, num_workers=0, sampler=sampler, collate_fn=custom_collate)
+    val_loader = DataLoader(val_dataset, batch_size=4, collate_fn=custom_collate)
     trainer = Trainer()
     trainer.train(train_loader, val_loader)
 
 if __name__ == '__main__':
     print('start ...')
 
-    # train_model()
+    train_model()
     trainer = Trainer()
     test_dataset = QuestionsDataset(sheet_index=2, dic=char_dic)
     trainer.t(test_dataset, name='siamese_best.pkl', echo='siamese_best')
