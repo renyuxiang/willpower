@@ -1,3 +1,6 @@
-.*pkl
+*pkl
+*xlsx
+*txt
+*temp*
 */__pycache__/*
 *__pycache__/*
